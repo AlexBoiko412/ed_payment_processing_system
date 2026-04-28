@@ -1,0 +1,17 @@
+**/target/
+
+certs/
+**/src/main/resources/keystore.p12
+**/src/main/resources/public-key.pem
+
+.idea/
+.vscode/
+**/*.iml
+.DS_Store
+Thumbs.db
+
+.git/
+.gitignore
+
+docs/
+*.md
