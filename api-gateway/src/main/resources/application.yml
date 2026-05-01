@@ -1,0 +1,73 @@
+server:
+  port: 8080
+  ssl:
+    # TODO: generate keystore - see docs/KEY_GENERATION.md §4
+    enabled: true
+    key-store: classpath:keystore.p12
+    key-store-password: ${SSL_KEYSTORE_PASSWORD:changeit}
+    key-store-type: PKCS12
+    key-alias: api-gateway
+
+spring:
+  application:
+    name: api-gateway
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # RSA public key (PEM) used to verify RS256 JWTs.
+          # Mounted at runtime via docker-compose volume: ./certs/public-key.pem → /app/public-key.pem
+          # Generate with: openssl rsa -in certs/private-key.pem -pubout -out certs/public-key.pem
+          public-key-location: file:/app/public-key.pem
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:redis_pass}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 10
+          max-idle: 5
+
+  cloud:
+    gateway:
+      default-filters:
+        - StripPrefix=1
+      routes:
+        - id: payment-service
+          uri: ${PAYMENT_SERVICE_URL:https://localhost:8081}
+          predicates:
+            - Path=/api/payments/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 50
+                redis-rate-limiter.burstCapacity: 100
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
+
+        # TODO: add routes for fraud-service admin endpoints, ledger queries, etc.
+
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins: "${ALLOWED_ORIGINS:*}"
+            allowedMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+            allowedHeaders: ["*"]
+            allowCredentials: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    org.springframework.security: INFO
+    com.payment.gateway: DEBUG
