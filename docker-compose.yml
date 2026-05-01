@@ -1,0 +1,209 @@
+version: '3.9'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: payment-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
+    networks:
+      - payment-net
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: payment-kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - payment-net
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: payment-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - payment-net
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic payment.initiated  --replication-factor 1 --partitions 3 &&
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic payment.validated  --replication-factor 1 --partitions 3 &&
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic payment.rejected   --replication-factor 1 --partitions 3 &&
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic payment.settled    --replication-factor 1 --partitions 3 &&
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic payment.compensate --replication-factor 1 --partitions 3 &&
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic payment.dlq        --replication-factor 1 --partitions 1 &&
+      echo 'All Kafka topics created.'
+      "
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: payment-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "9093:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: payment-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    networks:
+      - payment-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: payment-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: payment_db
+      POSTGRES_USER: ${POSTGRES_USER:-payment_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-payment_pass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - payment-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-payment_user} -d payment_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: payment-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_pass} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - payment-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_pass}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: api-gateway
+        SSL_KEYSTORE_PASSWORD: ${SSL_KEYSTORE_PASSWORD:-changeit}
+    container_name: payment-api-gateway
+    restart: "on-failure:3"
+    ports:
+      - "8080:8080"
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      PAYMENT_SERVICE_URL: https://payment-service:8081
+    volumes:
+      - ./certs/public-key.pem:/app/public-key.pem:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - payment-net
+    healthcheck:
+      test: ["CMD", "curl", "-k", "-f", "https://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: payment-service
+        SSL_KEYSTORE_PASSWORD: ${SSL_KEYSTORE_PASSWORD:-changeit}
+    container_name: payment-payment-service
+    restart: "on-failure:3"
+    ports:
+      - "8081:8081"
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - payment-net
+    healthcheck:
+      test: ["CMD", "curl", "-k", "-f", "https://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: payment-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - payment-net
+
+volumes:
+  zookeeper-data:
+  zookeeper-log:
+  kafka-data:
+  postgres-data:
+  redis-data:
+
+networks:
+  payment-net:
+    driver: bridge
