@@ -47,6 +47,7 @@ A monolithic approach is ruled out at the design stage because the fraud detecti
 
 The system is decomposed into six microservices that communicate exclusively through Kafka topics. No service calls another service directly (except the API gateway forwarding the initial REST request to payment-service). This decoupling means each service can be deployed, scaled, and failed independently.
 
+<img width="2456" height="2299" alt="payment1" src="https://github.com/user-attachments/assets/884f5854-0c3e-414c-8f47-f05742dd336e" />
 
 
 ---
@@ -230,6 +231,7 @@ The rule engine is designed to be extended: each rule is an independent check th
 
 ## 8. Security Boundaries
 
+<img width="2867" height="1806" alt="payment2" src="https://github.com/user-attachments/assets/e33bfde2-e739-40e1-b848-b9f946dff8e1" />
 
 
 In production:

@@ -5,6 +5,7 @@ A production-grade, event-driven payment platform built with Java 21 and Spring 
 ---
 
 ## Architecture
+<img width="3039" height="2109" alt="payment3" src="https://github.com/user-attachments/assets/4ff28c6c-c779-4d31-b253-0ec99b916ef8" />
 
 ---
 
