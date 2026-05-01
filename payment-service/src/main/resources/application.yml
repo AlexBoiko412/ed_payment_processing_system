@@ -1,0 +1,47 @@
+server:
+  port: 8081
+  ssl:
+    enabled: true
+    key-store: classpath:keystore.p12
+    key-store-password: ${SSL_KEYSTORE_PASSWORD:changeit}
+    key-store-type: PKCS12
+    key-alias: payment-service
+
+spring:
+  application:
+    name: payment-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 1
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:redis_pass}
+      timeout: 2000ms
+
+payment:
+  idempotency:
+    ttl-minutes: 1440
+  crypto:
+    # TODO: load from AWS Secrets Manager / HashiCorp Vault in production
+    aes-key: ${AES_ENCRYPTION_KEY:REPLACE_ME_WITH_BASE64_AES_KEY}
+    hmac-secret: ${KAFKA_HMAC_SECRET:REPLACE_ME_WITH_HMAC_SECRET}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  level:
+    com.payment.payments: DEBUG
+    org.springframework.kafka: INFO
