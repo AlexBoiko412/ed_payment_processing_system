@@ -1,0 +1,28 @@
+# Secrets & keys
+.env
+.env.local
+.env.*.local
+certs/private-key.pem
+certs/tls-key.pem
+certs/tls-cert.pem
+certs/keystore.p12
+certs/private-key.pem
+# Keystores in resources (dev only/ secrets manager in production)
+**/src/main/resources/keystore.p12
+**/src/main/resources/private-key.pem
+
+# Maven build output
+target/
+*/target/
+*.jar
+*.war
+
+# IDE
+.idea/workspace.xml
+.idea/tasks.xml
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
