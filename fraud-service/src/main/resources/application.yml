@@ -1,0 +1,54 @@
+server:
+  port: 8082
+  ssl:
+    enabled: true
+    key-store: classpath:keystore.p12
+    key-store-password: ${SSL_KEYSTORE_PASSWORD:changeit}
+    key-store-type: PKCS12
+    key-alias: fraud-service
+
+spring:
+  application:
+    name: fraud-service
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: fraud-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.payment.shared.dto"
+        spring.json.value.default.type: "com.payment.shared.dto.PaymentEvent"
+        isolation.level: read_committed
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:redis_pass}
+
+fraud:
+  rules:
+    max-amount: 10000.00
+    velocity-window-seconds: 60
+    velocity-max-transactions: 5
+  crypto:
+    aes-key: ${AES_ENCRYPTION_KEY:REPLACE_ME_WITH_BASE64_AES_KEY}
+    hmac-secret: ${KAFKA_HMAC_SECRET:REPLACE_ME_WITH_HMAC_SECRET}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  level:
+    com.payment.fraud: DEBUG
