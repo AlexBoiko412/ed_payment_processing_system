@@ -51,7 +51,6 @@ public class LedgerService {
      */
     @Transactional
     public void settle(PaymentEvent event) {
-        // -- Idempotency guard ----------------------------------------------
         if (ledgerEventRepository
                 .findByIdempotencyKeyAndEventType(event.idempotencyKey(), LedgerEventType.DEBIT)
                 .isPresent()) {
